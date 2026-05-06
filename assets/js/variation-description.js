@@ -6,16 +6,25 @@
 (function ($) {
     'use strict';
 
-    var hoverTimer      = null;
-    var isModalOpen     = false;
-    var totalAttributes = 0;
+    var hoverTimer         = null;
+    var isModalOpen        = false;
+    var totalAttributes    = 0;
     var selectedAttributes = {};
-    var currentVariation    = null;
-    var iconClicked         = false;
+    var currentVariation   = null;
+    var iconClicked        = false;
 
-    // Auto-show: trigger once per session (tracked in sessionStorage)
     var autoShowEnabled = wpvdSettings.autoShow === '1';
     var autoShowFired   = sessionStorage.getItem('wpvd_auto_shown') === '1';
+
+    // ── Auto-show helper ──────────────────────────────────────────────────────
+    // Central function: called whenever a variation with a description is found.
+    // Guards against double-firing with autoShowFired flag.
+    function tryAutoShow(description) {
+        if (!autoShowEnabled || autoShowFired || isModalOpen || !description) return;
+        autoShowFired = true;
+        sessionStorage.setItem('wpvd_auto_shown', '1');
+        openModal(description, '', true);
+    }
 
     // ── Icon management ───────────────────────────────────────────────────────
 
@@ -30,34 +39,48 @@
 
         if (totalAttributes <= 1) {
             addDescriptionIcons(variations);
-            return;
+        } else {
+            updateSelectedAttributes();
+            updateIconsBasedOnSelection(variations);
         }
 
-        updateSelectedAttributes();
-        updateIconsBasedOnSelection(variations);
+        // Bind found_variation directly on the form so it fires even when
+        // a theme or plugin calls stopPropagation() before the event reaches document.
+        $form.off('found_variation.wpvd').on('found_variation.wpvd', function (event, variation) {
+            currentVariation = variation;
+
+            if (totalAttributes > 1) {
+                updateIconsBasedOnSelection(variations);
+            }
+
+            tryAutoShow(variation.variation_description_raw);
+        });
+
+        // Also keep a document-level listener as secondary fallback.
+        $(document).off('found_variation.wpvd').on('found_variation.wpvd', function (event, variation) {
+            currentVariation = variation;
+            tryAutoShow(variation.variation_description_raw);
+        });
     }
 
     function updateSelectedAttributes() {
         selectedAttributes = {};
-        var selectedCount = 0;
-
+        var count = 0;
         $('.variations select').each(function () {
-            var attrName = $(this).attr('name');
-            var value    = $(this).val();
+            var name  = $(this).attr('name');
+            var value = $(this).val();
             if (value && value !== '') {
-                selectedAttributes[attrName] = value;
-                selectedCount++;
+                selectedAttributes[name] = value;
+                count++;
             }
         });
-
-        return selectedCount;
+        return count;
     }
 
     function findMatchingVariation(variations, selectedAttrs) {
         for (var i = 0; i < variations.length; i++) {
             var variation = variations[i];
             var matches   = true;
-
             for (var attr in selectedAttrs) {
                 if (
                     variation.attributes[attr] !== selectedAttrs[attr] &&
@@ -67,7 +90,6 @@
                     break;
                 }
             }
-
             if (matches) return variation;
         }
         return null;
@@ -85,7 +107,6 @@
                     var $row     = $(this);
                     var attrName = $row.find('select').attr('name');
                     var selVal   = selectedAttributes[attrName];
-
                     if (!selVal) return;
 
                     $row.find('.variable-item').each(function () {
@@ -101,13 +122,12 @@
         } else if (selectedCount === totalAttributes - 1) {
             var unselectedAttr = null;
             $('.variations select').each(function () {
-                var attrName = $(this).attr('name');
-                if (!selectedAttributes[attrName]) {
-                    unselectedAttr = attrName;
+                var name = $(this).attr('name');
+                if (!selectedAttributes[name]) {
+                    unselectedAttr = name;
                     return false;
                 }
             });
-
             if (unselectedAttr) {
                 addDescriptionIconsForAttribute(variations, unselectedAttr, selectedAttributes);
             }
@@ -145,9 +165,7 @@
             $row.find('.variable-item:not(.radio-variable-item)').each(function () {
                 var $item = $(this);
                 var value = $item.attr('data-value') || $item.find('input').val();
-                if (descMap[value]) {
-                    addIconToItem($item, descMap[value], value);
-                }
+                if (descMap[value]) addIconToItem($item, descMap[value], value);
             });
         });
     }
@@ -157,7 +175,6 @@
 
         variations.forEach(function (variation) {
             if (!variation.variation_description_raw) return;
-
             Object.keys(variation.attributes).forEach(function (attrKey) {
                 var attrValue = variation.attributes[attrKey];
                 if (attrValue) {
@@ -199,7 +216,6 @@
         if ($item.find('.variable-item-span').length) {
             var $span = $item.find('.variable-item-span');
             $span.html($span.text() + iconHtml);
-
         } else if ($item.find('label').length) {
             var $label    = $item.find('label');
             var labelText = $label.contents().filter(function () {
@@ -222,9 +238,11 @@
     // ── Modal ─────────────────────────────────────────────────────────────────
 
     function showModal($icon, isAutoShow) {
-        var description = decodeURIComponent($icon.attr('data-description'));
-        var title       = $icon.attr('data-title');
-        openModal(description, title, isAutoShow);
+        openModal(
+            decodeURIComponent($icon.attr('data-description')),
+            $icon.attr('data-title'),
+            isAutoShow
+        );
     }
 
     function openModal(description, title, isAutoShow) {
@@ -261,7 +279,7 @@
     $(document).on('mouseenter', '.variation-info-icon', function () {
         if (isModalOpen || ('ontouchstart' in window)) return;
 
-        var $icon = $(this);
+        var $icon       = $(this);
         var description = decodeURIComponent($icon.attr('data-description'));
 
         clearTimeout(hoverTimer);
@@ -274,9 +292,7 @@
             var textContent = (tempDiv.textContent || tempDiv.innerText || '').replace(/\s+/g, ' ').trim();
 
             if (textContent.length > 80) {
-                $tooltip.html(
-                    '<span style="color:#4CAF50;font-size:12px;font-weight:500;white-space:nowrap;display:inline-block;">✓ 點我查看詳細說明</span>'
-                );
+                $tooltip.html('<span style="color:#4CAF50;font-size:12px;font-weight:500;white-space:nowrap;display:inline-block;">✓ 點我查看詳細說明</span>');
                 $tooltip.css({ 'white-space': 'nowrap', 'min-width': 'auto', 'max-width': 'none', 'padding': '8px 12px' });
             } else {
                 $tooltip.text(textContent);
@@ -361,7 +377,7 @@
         }
     });
 
-    // Re-evaluate icons when selections change
+    // Re-evaluate icons on select change
     $(document).on('change', '.variations select', function () {
         var $form      = $('.variations_form');
         var variations = $form.data('product_variations');
@@ -370,27 +386,60 @@
         }
     });
 
-    $(document).on('found_variation', function (event, variation) {
-        currentVariation = variation;
+    // Swatch click: update icons + auto-show fallback via direct product_variations lookup.
+    // This covers cases where found_variation is blocked by stopPropagation.
+    $(document).on('click', '.variable-item', function () {
+        if ($(this).closest('.variation-info-icon').length) return;
+
+        var $form      = $('.variations_form');
+        var variations = $form.data('product_variations');
+        if (!variations) return;
 
         // Update icons for multi-attribute products
         if (totalAttributes > 1) {
-            var variations = $('.variations_form').data('product_variations');
-            if (variations) updateIconsBasedOnSelection(variations);
-        }
-
-        // Auto-show: unified trigger for any attribute count
-        if (autoShowEnabled && !autoShowFired && !isModalOpen && variation.variation_description_raw) {
-            autoShowFired = true;
-            sessionStorage.setItem('wpvd_auto_shown', '1');
-            openModal(variation.variation_description_raw, '', true);
-        }
-    });
-
-    $(document).on('click', '.variable-item', function () {
-        var variations = $('.variations_form').data('product_variations');
-        if (variations && totalAttributes > 1) {
             setTimeout(function () { updateIconsBasedOnSelection(variations); }, 100);
+        }
+
+        // Auto-show fallback: read description directly from product_variations data.
+        // Runs 250ms after click to let WooCommerce update the select values first.
+        if (autoShowEnabled && !autoShowFired) {
+            var $clickedItem = $(this);
+            setTimeout(function () {
+                if (autoShowFired || isModalOpen) return;
+
+                var clickedValue = $clickedItem.attr('data-value') || $clickedItem.find('input').val();
+
+                // Re-read selections now that WooCommerce has updated the selects
+                var attrs = {};
+                var count = 0;
+                $('.variations select').each(function () {
+                    var v = $(this).val();
+                    if (v && v !== '') {
+                        attrs[$(this).attr('name')] = v;
+                        count++;
+                    }
+                });
+
+                if (count === 0) return;
+
+                // For single-attribute: look up the clicked value directly
+                if (totalAttributes <= 1) {
+                    for (var i = 0; i < variations.length; i++) {
+                        var vAttrs = variations[i].attributes;
+                        for (var key in vAttrs) {
+                            if ((vAttrs[key] === clickedValue || vAttrs[key] === '') &&
+                                variations[i].variation_description_raw) {
+                                tryAutoShow(variations[i].variation_description_raw);
+                                return;
+                            }
+                        }
+                    }
+                } else {
+                    // Multi-attribute: look for a fully matched variation
+                    var matched = findMatchingVariation(variations, attrs);
+                    if (matched) tryAutoShow(matched.variation_description_raw);
+                }
+            }, 250);
         }
     });
 
@@ -410,12 +459,11 @@
         var target = document.querySelector('.variations_form');
         if (!target) return;
 
-        var observer = new MutationObserver(function (mutations) {
+        new MutationObserver(function (mutations) {
             mutations.forEach(function (mutation) {
                 $(mutation.addedNodes).find('.variation-info-icon').css('position', 'relative');
             });
-        });
-        observer.observe(target, { childList: true, subtree: true });
+        }).observe(target, { childList: true, subtree: true });
     });
 
     // ── Boot ──────────────────────────────────────────────────────────────────
