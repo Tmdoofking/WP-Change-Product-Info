@@ -93,7 +93,6 @@
                         var value = $item.attr('data-value') || $item.find('input').val();
                         if (value === selVal) {
                             addIconToItem($item, matched.variation_description_raw, value);
-                            maybeAutoShow($item, matched.variation_description_raw, value);
                             return false;
                         }
                     });
@@ -220,35 +219,23 @@
         }
     }
 
-    // ── Auto-show on first variant selection ──────────────────────────────────
-
-    function maybeAutoShow($item, description, value) {
-        if (!autoShowEnabled || autoShowFired || isModalOpen) return;
-
-        autoShowFired = true;
-        sessionStorage.setItem('wpvd_auto_shown', '1');
-
-        var $icon = $item.find('.variation-info-icon');
-        if ($icon.length) {
-            showModal($icon, true /* isAutoShow */);
-        }
-    }
-
     // ── Modal ─────────────────────────────────────────────────────────────────
 
     function showModal($icon, isAutoShow) {
+        var description = decodeURIComponent($icon.attr('data-description'));
+        var title       = $icon.attr('data-title');
+        openModal(description, title, isAutoShow);
+    }
+
+    function openModal(description, title, isAutoShow) {
         clearTimeout(hoverTimer);
         $('.variation-tooltip-hover').removeClass('show');
 
-        var description = decodeURIComponent($icon.attr('data-description'));
-        var title       = $icon.attr('data-title');
-
         $('#variation-description-modal .wpvd-modal__title').html(
-            wpvdSettings.modalTitle + ': ' + title
+            wpvdSettings.modalTitle + (title ? ': ' + title : '')
         );
         $('#variation-description-modal .wpvd-modal__body').html(description);
 
-        // Show/hide first-time hint inside modal
         var $hint = $('#wpvd-auto-hint');
         if (isAutoShow) {
             $hint.find('.wpvd-hint__text').text(wpvdSettings.hintText);
@@ -385,9 +372,18 @@
 
     $(document).on('found_variation', function (event, variation) {
         currentVariation = variation;
+
+        // Update icons for multi-attribute products
         if (totalAttributes > 1) {
             var variations = $('.variations_form').data('product_variations');
             if (variations) updateIconsBasedOnSelection(variations);
+        }
+
+        // Auto-show: unified trigger for any attribute count
+        if (autoShowEnabled && !autoShowFired && !isModalOpen && variation.variation_description_raw) {
+            autoShowFired = true;
+            sessionStorage.setItem('wpvd_auto_shown', '1');
+            openModal(variation.variation_description_raw, '', true);
         }
     });
 
