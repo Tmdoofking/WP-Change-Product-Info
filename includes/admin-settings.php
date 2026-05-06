@@ -1,7 +1,5 @@
 <?php
-if ( ! defined( 'ABSPATH' ) ) {
-    exit;
-}
+defined( 'ABSPATH' ) || exit;
 
 add_action( 'admin_menu', 'wpvd_add_admin_menu' );
 function wpvd_add_admin_menu() {
@@ -19,36 +17,26 @@ function wpvd_register_settings() {
     register_setting(
         'wpvd_settings_group',
         'wpvd_settings',
-        array(
-            'sanitize_callback' => 'wpvd_sanitize_settings',
-            'default'           => array( 'auto_show' => 0 ),
-        )
+        array( 'sanitize_callback' => 'wpvd_sanitize_settings' )
     );
 
-    add_settings_section(
-        'wpvd_main_section',
-        __( '一般設定', 'wp-variation-description' ),
-        null,
-        'wp-variation-description'
-    );
+    add_settings_section( 'wpvd_main', __( '一般設定', 'wp-variation-description' ), null, 'wp-variation-description' );
 
     add_settings_field(
         'wpvd_auto_show',
         __( '自動顯示說明', 'wp-variation-description' ),
         'wpvd_render_auto_show_field',
         'wp-variation-description',
-        'wpvd_main_section'
+        'wpvd_main'
     );
 }
 
 function wpvd_sanitize_settings( $input ) {
-    $output = array();
-    $output['auto_show'] = ! empty( $input['auto_show'] ) ? 1 : 0;
-    return $output;
+    return array( 'auto_show' => ! empty( $input['auto_show'] ) ? 1 : 0 );
 }
 
 function wpvd_render_auto_show_field() {
-    $options   = get_option( 'wpvd_settings', array( 'auto_show' => 0 ) );
+    $options   = get_option( 'wpvd_settings', array() );
     $auto_show = ! empty( $options['auto_show'] ) ? 1 : 0;
     ?>
     <label for="wpvd_auto_show" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
@@ -64,7 +52,7 @@ function wpvd_render_auto_show_field() {
             <?php esc_html_e( '當顧客首次點選含有說明的商品變體時，自動彈出說明視窗（每個工作階段僅觸發一次）。', 'wp-variation-description' ); ?>
             <br>
             <small style="color:#666;">
-                <?php esc_html_e( '說明視窗關閉後，視窗內將顯示提示訊息，告知顧客可透過 ⓘ 圖示查看後續說明。', 'wp-variation-description' ); ?>
+                <?php esc_html_e( '說明視窗內將顯示提示，告知顧客可透過 ⓘ 圖示查看後續說明。', 'wp-variation-description' ); ?>
             </small>
         </span>
     </label>
