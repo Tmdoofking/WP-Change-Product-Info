@@ -1,8 +1,8 @@
 /**
  * WooCommerce Variation Description Display
- * Handles info icons, hover tooltips, modal popup, and auto-show on first selection.
+ * Handles info icons, hover tooltips, and modal popup.
  */
-/* global wpvdSettings, jQuery */
+/* global jQuery */
 (function ($) {
     'use strict';
 
@@ -10,21 +10,7 @@
     var isModalOpen        = false;
     var totalAttributes    = 0;
     var selectedAttributes = {};
-    var currentVariation   = null;
     var iconClicked        = false;
-
-    var autoShowEnabled = wpvdSettings.autoShow === '1';
-    var autoShowFired   = sessionStorage.getItem('wpvd_auto_shown') === '1';
-
-    // ── Auto-show helper ──────────────────────────────────────────────────────
-    // Central function: called whenever a variation with a description is found.
-    // Guards against double-firing with autoShowFired flag.
-    function tryAutoShow(description) {
-        if (!autoShowEnabled || autoShowFired || isModalOpen || !description) return;
-        autoShowFired = true;
-        sessionStorage.setItem('wpvd_auto_shown', '1');
-        openModal(description, '', true);
-    }
 
     // ── Icon management ───────────────────────────────────────────────────────
 
@@ -43,24 +29,6 @@
             updateSelectedAttributes();
             updateIconsBasedOnSelection(variations);
         }
-
-        // Bind found_variation directly on the form so it fires even when
-        // a theme or plugin calls stopPropagation() before the event reaches document.
-        $form.off('found_variation.wpvd').on('found_variation.wpvd', function (event, variation) {
-            currentVariation = variation;
-
-            if (totalAttributes > 1) {
-                updateIconsBasedOnSelection(variations);
-            }
-
-            tryAutoShow(variation.variation_description_raw);
-        });
-
-        // Also keep a document-level listener as secondary fallback.
-        $(document).off('found_variation.wpvd').on('found_variation.wpvd', function (event, variation) {
-            currentVariation = variation;
-            tryAutoShow(variation.variation_description_raw);
-        });
     }
 
     function updateSelectedAttributes() {
@@ -237,31 +205,15 @@
 
     // ── Modal ─────────────────────────────────────────────────────────────────
 
-    function showModal($icon, isAutoShow) {
-        openModal(
-            decodeURIComponent($icon.attr('data-description')),
-            $icon.attr('data-title'),
-            isAutoShow
-        );
-    }
-
-    function openModal(description, title, isAutoShow) {
+    function showModal($icon) {
         clearTimeout(hoverTimer);
         $('.variation-tooltip-hover').removeClass('show');
 
-        $('#variation-description-modal .wpvd-modal__title').html(
-            wpvdSettings.modalTitle + (title ? ': ' + title : '')
-        );
+        var description = decodeURIComponent($icon.attr('data-description'));
+        var title       = $icon.attr('data-title');
+
+        $('#variation-description-modal .wpvd-modal__title').html('變體說明: ' + title);
         $('#variation-description-modal .wpvd-modal__body').html(description);
-
-        var $hint = $('#wpvd-auto-hint');
-        if (isAutoShow) {
-            $hint.find('.wpvd-hint__text').text(wpvdSettings.hintText);
-            $hint.show();
-        } else {
-            $hint.hide();
-        }
-
         $('#variation-description-modal').addClass('show');
         $('body').addClass('modal-open');
         isModalOpen = true;
@@ -292,7 +244,7 @@
             var textContent = (tempDiv.textContent || tempDiv.innerText || '').replace(/\s+/g, ' ').trim();
 
             if (textContent.length > 80) {
-                $tooltip.html('<span style="color:#4CAF50;font-size:12px;font-weight:500;white-space:nowrap;display:inline-block;">✓ 點我查看詳細說明</span>');
+                $tooltip.html('<span style="color:#4CAF50;font-size:12px;font-weight:500;white-space:nowrap;display:inline-block;">&#10003; 點我查看詳細說明</span>');
                 $tooltip.css({ 'white-space': 'nowrap', 'min-width': 'auto', 'max-width': 'none', 'padding': '8px 12px' });
             } else {
                 $tooltip.text(textContent);
@@ -325,7 +277,7 @@
         var $icon = $(this);
         iconClicked = true;
         setTimeout(function () {
-            if (iconClicked) showModal($icon, false);
+            if (iconClicked) showModal($icon);
         }, 50);
         return false;
     });
@@ -335,7 +287,7 @@
         e.stopPropagation();
         e.stopImmediatePropagation();
         iconClicked = true;
-        showModal($(this), false);
+        showModal($(this));
         return false;
     });
 
@@ -343,7 +295,7 @@
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        if (!iconClicked) showModal($(this), false);
+        if (!iconClicked) showModal($(this));
         iconClicked = false;
         return false;
     });
@@ -386,67 +338,24 @@
         }
     });
 
-    // Swatch click: update icons + auto-show fallback via direct product_variations lookup.
-    // This covers cases where found_variation is blocked by stopPropagation.
+    $(document).on('found_variation', function (event, variation) {
+        if (totalAttributes > 1) {
+            var variations = $('.variations_form').data('product_variations');
+            if (variations) updateIconsBasedOnSelection(variations);
+        }
+    });
+
     $(document).on('click', '.variable-item', function () {
         if ($(this).closest('.variation-info-icon').length) return;
-
-        var $form      = $('.variations_form');
-        var variations = $form.data('product_variations');
-        if (!variations) return;
-
-        // Update icons for multi-attribute products
-        if (totalAttributes > 1) {
+        var variations = $('.variations_form').data('product_variations');
+        if (variations && totalAttributes > 1) {
             setTimeout(function () { updateIconsBasedOnSelection(variations); }, 100);
-        }
-
-        // Auto-show fallback: read description directly from product_variations data.
-        // Runs 250ms after click to let WooCommerce update the select values first.
-        if (autoShowEnabled && !autoShowFired) {
-            var $clickedItem = $(this);
-            setTimeout(function () {
-                if (autoShowFired || isModalOpen) return;
-
-                var clickedValue = $clickedItem.attr('data-value') || $clickedItem.find('input').val();
-
-                // Re-read selections now that WooCommerce has updated the selects
-                var attrs = {};
-                var count = 0;
-                $('.variations select').each(function () {
-                    var v = $(this).val();
-                    if (v && v !== '') {
-                        attrs[$(this).attr('name')] = v;
-                        count++;
-                    }
-                });
-
-                if (count === 0) return;
-
-                // For single-attribute: look up the clicked value directly
-                if (totalAttributes <= 1) {
-                    for (var i = 0; i < variations.length; i++) {
-                        var vAttrs = variations[i].attributes;
-                        for (var key in vAttrs) {
-                            if ((vAttrs[key] === clickedValue || vAttrs[key] === '') &&
-                                variations[i].variation_description_raw) {
-                                tryAutoShow(variations[i].variation_description_raw);
-                                return;
-                            }
-                        }
-                    }
-                } else {
-                    // Multi-attribute: look for a fully matched variation
-                    var matched = findMatchingVariation(variations, attrs);
-                    if (matched) tryAutoShow(matched.variation_description_raw);
-                }
-            }, 250);
         }
     });
 
     $(document).on('click', '.reset_variations', function () {
         setTimeout(function () {
             $('.variation-info-icon').remove();
-            currentVariation = null;
         }, 100);
     });
 
