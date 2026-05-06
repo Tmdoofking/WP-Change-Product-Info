@@ -7,7 +7,7 @@
  * Requires at least: 5.9
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
- * Author:            tmdoofking
+ * Author:            DavidBuy
  * License:           GPL-2.0+
  * Text Domain:       wp-variation-description
  */
