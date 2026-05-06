@@ -1,21 +1,16 @@
 /**
  * WooCommerce Variation Description Display
- * Handles info icons, hover tooltips, modal popup, and auto-show on first selection.
+ * Handles info icons, hover tooltips, and modal popup.
  */
-/* global wpvdSettings, jQuery */
+/* global jQuery */
 (function ($) {
     'use strict';
 
-    var hoverTimer      = null;
-    var isModalOpen     = false;
-    var totalAttributes = 0;
+    var hoverTimer         = null;
+    var isModalOpen        = false;
+    var totalAttributes    = 0;
     var selectedAttributes = {};
-    var currentVariation    = null;
-    var iconClicked         = false;
-
-    // Auto-show: trigger once per session (tracked in sessionStorage)
-    var autoShowEnabled = wpvdSettings.autoShow === '1';
-    var autoShowFired   = sessionStorage.getItem('wpvd_auto_shown') === '1';
+    var iconClicked        = false;
 
     // ── Icon management ───────────────────────────────────────────────────────
 
@@ -30,34 +25,30 @@
 
         if (totalAttributes <= 1) {
             addDescriptionIcons(variations);
-            return;
+        } else {
+            updateSelectedAttributes();
+            updateIconsBasedOnSelection(variations);
         }
-
-        updateSelectedAttributes();
-        updateIconsBasedOnSelection(variations);
     }
 
     function updateSelectedAttributes() {
         selectedAttributes = {};
-        var selectedCount = 0;
-
+        var count = 0;
         $('.variations select').each(function () {
-            var attrName = $(this).attr('name');
-            var value    = $(this).val();
+            var name  = $(this).attr('name');
+            var value = $(this).val();
             if (value && value !== '') {
-                selectedAttributes[attrName] = value;
-                selectedCount++;
+                selectedAttributes[name] = value;
+                count++;
             }
         });
-
-        return selectedCount;
+        return count;
     }
 
     function findMatchingVariation(variations, selectedAttrs) {
         for (var i = 0; i < variations.length; i++) {
             var variation = variations[i];
             var matches   = true;
-
             for (var attr in selectedAttrs) {
                 if (
                     variation.attributes[attr] !== selectedAttrs[attr] &&
@@ -67,7 +58,6 @@
                     break;
                 }
             }
-
             if (matches) return variation;
         }
         return null;
@@ -85,7 +75,6 @@
                     var $row     = $(this);
                     var attrName = $row.find('select').attr('name');
                     var selVal   = selectedAttributes[attrName];
-
                     if (!selVal) return;
 
                     $row.find('.variable-item').each(function () {
@@ -93,7 +82,6 @@
                         var value = $item.attr('data-value') || $item.find('input').val();
                         if (value === selVal) {
                             addIconToItem($item, matched.variation_description_raw, value);
-                            maybeAutoShow($item, matched.variation_description_raw, value);
                             return false;
                         }
                     });
@@ -102,13 +90,12 @@
         } else if (selectedCount === totalAttributes - 1) {
             var unselectedAttr = null;
             $('.variations select').each(function () {
-                var attrName = $(this).attr('name');
-                if (!selectedAttributes[attrName]) {
-                    unselectedAttr = attrName;
+                var name = $(this).attr('name');
+                if (!selectedAttributes[name]) {
+                    unselectedAttr = name;
                     return false;
                 }
             });
-
             if (unselectedAttr) {
                 addDescriptionIconsForAttribute(variations, unselectedAttr, selectedAttributes);
             }
@@ -146,9 +133,7 @@
             $row.find('.variable-item:not(.radio-variable-item)').each(function () {
                 var $item = $(this);
                 var value = $item.attr('data-value') || $item.find('input').val();
-                if (descMap[value]) {
-                    addIconToItem($item, descMap[value], value);
-                }
+                if (descMap[value]) addIconToItem($item, descMap[value], value);
             });
         });
     }
@@ -158,7 +143,6 @@
 
         variations.forEach(function (variation) {
             if (!variation.variation_description_raw) return;
-
             Object.keys(variation.attributes).forEach(function (attrKey) {
                 var attrValue = variation.attributes[attrKey];
                 if (attrValue) {
@@ -200,7 +184,6 @@
         if ($item.find('.variable-item-span').length) {
             var $span = $item.find('.variable-item-span');
             $span.html($span.text() + iconHtml);
-
         } else if ($item.find('label').length) {
             var $label    = $item.find('label');
             var labelText = $label.contents().filter(function () {
@@ -220,43 +203,17 @@
         }
     }
 
-    // ── Auto-show on first variant selection ──────────────────────────────────
-
-    function maybeAutoShow($item, description, value) {
-        if (!autoShowEnabled || autoShowFired || isModalOpen) return;
-
-        autoShowFired = true;
-        sessionStorage.setItem('wpvd_auto_shown', '1');
-
-        var $icon = $item.find('.variation-info-icon');
-        if ($icon.length) {
-            showModal($icon, true /* isAutoShow */);
-        }
-    }
-
     // ── Modal ─────────────────────────────────────────────────────────────────
 
-    function showModal($icon, isAutoShow) {
+    function showModal($icon) {
         clearTimeout(hoverTimer);
         $('.variation-tooltip-hover').removeClass('show');
 
         var description = decodeURIComponent($icon.attr('data-description'));
         var title       = $icon.attr('data-title');
 
-        $('#variation-description-modal .wpvd-modal__title').html(
-            wpvdSettings.modalTitle + ': ' + title
-        );
+        $('#variation-description-modal .wpvd-modal__title').html('變體說明: ' + title);
         $('#variation-description-modal .wpvd-modal__body').html(description);
-
-        // Show/hide first-time hint inside modal
-        var $hint = $('#wpvd-auto-hint');
-        if (isAutoShow) {
-            $hint.find('.wpvd-hint__text').text(wpvdSettings.hintText);
-            $hint.show();
-        } else {
-            $hint.hide();
-        }
-
         $('#variation-description-modal').addClass('show');
         $('body').addClass('modal-open');
         isModalOpen = true;
@@ -274,7 +231,7 @@
     $(document).on('mouseenter', '.variation-info-icon', function () {
         if (isModalOpen || ('ontouchstart' in window)) return;
 
-        var $icon = $(this);
+        var $icon       = $(this);
         var description = decodeURIComponent($icon.attr('data-description'));
 
         clearTimeout(hoverTimer);
@@ -287,9 +244,7 @@
             var textContent = (tempDiv.textContent || tempDiv.innerText || '').replace(/\s+/g, ' ').trim();
 
             if (textContent.length > 80) {
-                $tooltip.html(
-                    '<span style="color:#4CAF50;font-size:12px;font-weight:500;white-space:nowrap;display:inline-block;">✓ 點我查看詳細說明</span>'
-                );
+                $tooltip.html('<span style="color:#4CAF50;font-size:12px;font-weight:500;white-space:nowrap;display:inline-block;">&#10003; 點我查看詳細說明</span>');
                 $tooltip.css({ 'white-space': 'nowrap', 'min-width': 'auto', 'max-width': 'none', 'padding': '8px 12px' });
             } else {
                 $tooltip.text(textContent);
@@ -322,7 +277,7 @@
         var $icon = $(this);
         iconClicked = true;
         setTimeout(function () {
-            if (iconClicked) showModal($icon, false);
+            if (iconClicked) showModal($icon);
         }, 50);
         return false;
     });
@@ -332,7 +287,7 @@
         e.stopPropagation();
         e.stopImmediatePropagation();
         iconClicked = true;
-        showModal($(this), false);
+        showModal($(this));
         return false;
     });
 
@@ -340,7 +295,7 @@
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        if (!iconClicked) showModal($(this), false);
+        if (!iconClicked) showModal($(this));
         iconClicked = false;
         return false;
     });
@@ -374,7 +329,7 @@
         }
     });
 
-    // Re-evaluate icons when selections change
+    // Re-evaluate icons on select change
     $(document).on('change', '.variations select', function () {
         var $form      = $('.variations_form');
         var variations = $form.data('product_variations');
@@ -384,7 +339,6 @@
     });
 
     $(document).on('found_variation', function (event, variation) {
-        currentVariation = variation;
         if (totalAttributes > 1) {
             var variations = $('.variations_form').data('product_variations');
             if (variations) updateIconsBasedOnSelection(variations);
@@ -392,6 +346,7 @@
     });
 
     $(document).on('click', '.variable-item', function () {
+        if ($(this).closest('.variation-info-icon').length) return;
         var variations = $('.variations_form').data('product_variations');
         if (variations && totalAttributes > 1) {
             setTimeout(function () { updateIconsBasedOnSelection(variations); }, 100);
@@ -401,7 +356,6 @@
     $(document).on('click', '.reset_variations', function () {
         setTimeout(function () {
             $('.variation-info-icon').remove();
-            currentVariation = null;
         }, 100);
     });
 
@@ -414,12 +368,11 @@
         var target = document.querySelector('.variations_form');
         if (!target) return;
 
-        var observer = new MutationObserver(function (mutations) {
+        new MutationObserver(function (mutations) {
             mutations.forEach(function (mutation) {
                 $(mutation.addedNodes).find('.variation-info-icon').css('position', 'relative');
             });
-        });
-        observer.observe(target, { childList: true, subtree: true });
+        }).observe(target, { childList: true, subtree: true });
     });
 
     // ── Boot ──────────────────────────────────────────────────────────────────
